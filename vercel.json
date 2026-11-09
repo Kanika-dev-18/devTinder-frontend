@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://dev-tinder-coral.vercel.app/:path*"
+    }
+  ]
+}

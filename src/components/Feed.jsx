@@ -5,35 +5,69 @@ import { addFeed } from "../utils/feedSlice";
 import { useEffect, useState } from "react";
 import UserCard from "./UserCard";
 
+const requestFeed = () =>
+  axios.get(BASE_URL + "/feed", {
+    withCredentials: true,
+  });
+
+const reportFeedError = (error, setFeedError) => {
+  console.error("Unable to load feed:", error);
+  setFeedError(
+    error.response?.status === 401
+      ? "Please log in to discover people."
+      : error.response?.status === 503
+        ? "The backend service is temporarily unavailable. Please try again later."
+        : "We couldn’t load people right now. Check your connection and try again."
+  );
+};
+
 const Feed = () => {
   const feed = useSelector((store) => store.feed);
   const dispatch = useDispatch();
   const [currentPage, setCurrentPage] = useState(1);
+  const [feedError, setFeedError] = useState("");
   const pageSize = 9;
 
-  const getFeed = async () => {
+  useEffect(() => {
     if (feed) return;
-    try {
-      const res = await axios.get(BASE_URL + "/feed", {
-        withCredentials: true,
-      });
-      dispatch(addFeed(res?.data?.data));
-    } catch (err) {
-      //TODO: handle error
-    }
+
+    requestFeed()
+      .then((res) => {
+        if (!Array.isArray(res?.data?.data)) {
+          throw new Error("The feed response did not contain a user list.");
+        }
+        dispatch(addFeed(res.data.data));
+      })
+      .catch((err) => reportFeedError(err, setFeedError));
+  }, [dispatch, feed]);
+
+  const retryFeed = () => {
+    setFeedError("");
+    requestFeed()
+      .then((res) => {
+        if (!Array.isArray(res?.data?.data)) {
+          throw new Error("The feed response did not contain a user list.");
+        }
+        dispatch(addFeed(res.data.data));
+      })
+      .catch((err) => reportFeedError(err, setFeedError));
   };
 
-  useEffect(() => {
-    getFeed();
-  }, []);
-
   const pageCount = feed ? Math.ceil(feed.length / pageSize) : 0;
+  const activePage = Math.min(currentPage, Math.max(pageCount, 1));
 
-  useEffect(() => {
-    if (pageCount > 0 && currentPage > pageCount) {
-      setCurrentPage(pageCount);
-    }
-  }, [currentPage, pageCount]);
+  if (!feed && feedError)
+    return (
+      <section className="page-container">
+        <div className="empty-state" role="alert">
+          <h1 className="empty-state-title">Feed unavailable</h1>
+          <p className="mt-2">{feedError}</p>
+          <button className="btn btn-primary mt-5" onClick={retryFeed}>
+            Try again
+          </button>
+        </div>
+      </section>
+    );
 
   if (!feed)
     return (
@@ -60,8 +94,8 @@ const Feed = () => {
       </section>
     );
 
-  const startIndex = (currentPage - 1) * pageSize;
-  const visibleUsers = feed.slice(startIndex, startIndex + pageSize);
+  const visibleStartIndex = (activePage - 1) * pageSize;
+  const visibleUsers = feed.slice(visibleStartIndex, visibleStartIndex + pageSize);
 
   return (
     <section className="page-container feed-page">
@@ -73,7 +107,7 @@ const Feed = () => {
         </p>
       </div>
       <p className="feed-count">
-        Showing {startIndex + 1}–{startIndex + visibleUsers.length} of {feed.length} people
+        Showing {visibleStartIndex + 1}–{visibleStartIndex + visibleUsers.length} of {feed.length} people
       </p>
       <div className="feed-grid">
         {visibleUsers.map((user) => (
@@ -84,18 +118,18 @@ const Feed = () => {
         <nav className="feed-pagination" aria-label="Feed pages">
           <button
             className="btn btn-ghost"
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage((page) => page - 1)}
+            disabled={activePage === 1}
+            onClick={() => setCurrentPage(activePage - 1)}
           >
             Previous
           </button>
           <span className="feed-page-number" aria-current="page">
-            Page {currentPage} of {pageCount}
+            Page {activePage} of {pageCount}
           </span>
           <button
             className="btn btn-primary"
-            disabled={currentPage === pageCount}
-            onClick={() => setCurrentPage((page) => page + 1)}
+            disabled={activePage === pageCount}
+            onClick={() => setCurrentPage(activePage + 1)}
           >
             Next
           </button>
